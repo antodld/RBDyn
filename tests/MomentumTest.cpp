@@ -144,7 +144,8 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
       Vector3d oldComVel = rbd::computeCoMVelocity(mb, mbc);
 
       ForceVecd momentumDot = rbd::computeCentroidalMomentumDot(mb, mbc, oldCom, oldComVel);
-      cmm.computeMatrixAndMatrixDot(mb, mbc, oldCom, oldComVel);
+      cmm.computeMatrix(mb, mbc, oldCom);
+      cmm.computeMatrixDot(mb, mbc, oldCom, oldComVel);
       MatrixXd cmmMatrix = cmm.matrix();
       MatrixXd cmmMatrixDot = cmm.matrixDot();
       Vector6d momentumDotCMM = cmmMatrix * alphaD + cmmMatrixDot * alpha;
@@ -153,8 +154,8 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
       BOOST_CHECK_SMALL((momentumDot.vector() - momentumDotCMM).norm(), TOL);
 
       // check that each compute compute the same thing
-      cmm.computeMatrix(mb, mbc, oldCom);
-      cmm.computeMatrixDot(mb, mbc, oldCom, oldComVel);
+      cmm.computeMatrixAndMatrixDot(mb, mbc, oldCom, oldComVel);
+
 
       BOOST_CHECK_SMALL((cmmMatrix - cmm.matrix()).norm(), TOL);
       BOOST_CHECK_SMALL((cmmMatrixDot - cmm.matrixDot()).norm(), TOL);
