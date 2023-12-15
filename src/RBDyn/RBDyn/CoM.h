@@ -20,6 +20,9 @@ namespace rbd
 class MultiBody;
 struct MultiBodyConfig;
 
+RBDYN_DLLAPI Eigen::Matrix6d centroidalInertia(const MultiBody & mb, const MultiBodyConfig & mbc);
+
+
 /**
  * Compute the Center of Mass (CoM) position of a multibody.
  * @param mb MultiBody used has model.
@@ -27,6 +30,14 @@ struct MultiBodyConfig;
  * @return CoM position in world frame.
  */
 RBDYN_DLLAPI Eigen::Vector3d computeCoM(const MultiBody & mb, const MultiBodyConfig & mbc);
+
+/**
+ * Compute the Center of Mass (CoM) velocity of a multibody.
+ * @param mb MultiBody used has model.
+ * @param mbc Use bodyPosW and bodyVelB.
+ * @return CoM velocity in world frame.
+ */
+RBDYN_DLLAPI sva::MotionVecd computeCoMVelocity6D(const MultiBody & mb, const MultiBodyConfig & mbc);
 
 /**
  * Compute the Center of Mass (CoM) velocity of a multibody.
@@ -43,6 +54,8 @@ RBDYN_DLLAPI Eigen::Vector3d computeCoMVelocity(const MultiBody & mb, const Mult
  * @return CoM velocity in world frame.
  */
 RBDYN_DLLAPI Eigen::Vector3d computeCoMAcceleration(const MultiBody & mb, const MultiBodyConfig & mbc);
+
+RBDYN_DLLAPI sva::MotionVecd computeCoMAcceleration6D(const MultiBody & mb, const MultiBodyConfig & mbc);
 
 /**
  * Compute the CoM jacobian with a simple but slow algorithm.
@@ -68,7 +81,7 @@ public:
    * @param mbc Use bodyPosW and motionSubspace.
    * @return CoM Jacobian of mb with mbc configuration.
    */
-  const Eigen::MatrixXd & jacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd jacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
 
   /**
    * Access the last computed CoM jacobian
@@ -85,7 +98,7 @@ public:
    * @param mbc Use bodyPosW, bodyVelB, bodyVelW, and motionSubspace.
    * @return Time derivativo of the jacobian of mb with mbc configuration.
    */
-  const Eigen::MatrixXd & jacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd jacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
 
   /**
    * Access the last computed derivative of the CoM jacobian
@@ -101,12 +114,13 @@ public:
   /** safe version of @see jacobian.
    * @throw std::domain_error If mb don't match mbc.
    */
-  const Eigen::MatrixXd & sJacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd sJacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
 
   /** safe version of @see jacobianDot.
    * @throw std::domain_error If mb don't match mbc.
    */
-  const Eigen::MatrixXd & sJacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd sJacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
+
 
 private:
   void init(const rbd::MultiBody & mb);
@@ -157,7 +171,7 @@ public:
    * @param mbc Use bodyPosW and motionSubspace.
    * @return CoM Jacobian of mb with mbc configuration.
    */
-  const Eigen::MatrixXd & jacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd jacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
 
   /**
    * Access the last computed CoM jacobian
@@ -174,7 +188,7 @@ public:
    * @param mbc Use bodyPosW, bodyVelB, bodyVelW, and motionSubspace.
    * @return Time derivativo of the jacobian of mb with mbc configuration.
    */
-  const Eigen::MatrixXd & jacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd jacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
 
   /**
    * Access the last computed derivative of the CoM jacobian
@@ -228,12 +242,12 @@ public:
   /** safe version of @see jacobian.
    * @throw std::domain_error If mb don't match mbc.
    */
-  const Eigen::MatrixXd & sJacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd sJacobian(const MultiBody & mb, const MultiBodyConfig & mbc);
 
   /** safe version of @see jacobianDot.
    * @throw std::domain_error If mb don't match mbc.
    */
-  const Eigen::MatrixXd & sJacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
+  Eigen::MatrixXd sJacobianDot(const MultiBody & mb, const MultiBodyConfig & mbc);
 
   /** safe version of @see velocity.
    * @throw std::domain_error If mb don't match mbc.

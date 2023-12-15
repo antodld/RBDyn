@@ -97,12 +97,28 @@ BOOST_AUTO_TEST_CASE(centroidalMomentum)
     rbd::forwardVelocity(mb, mbc);
 
     Vector3d com = rbd::computeCoM(mb, mbc);
+    Vector3d comVel = rbd::computeCoMVelocity(mb,mbc);
     ForceVecd momentum = cmmW.momentum(mb, mbc, com);
     cmmW.computeMatrix(mb, mbc, com);
 
     ForceVecd momentumM(cmmW.matrix() * alpha);
 
     BOOST_CHECK_SMALL((momentum - momentumM).vector().norm(), TOL);
+
+    Eigen::Matrix6d Ic = Eigen::Matrix6d::Zero();
+    const sva::PTransformd X_0_c = sva::PTransformd(com);
+    for( int i = 0; i < mb.nrBodies(); i++)
+    {
+      const auto I = mb.bodies()[i].inertia().matrix();
+      const auto X_0_b = mbc.bodyPosW[i];
+      const auto X_b_c = X_0_c * X_0_b.inv();
+
+      Ic += (X_b_c.dualMatrix() * I * X_b_c.inv().matrix()) ;
+    }
+    const auto comVel6d = (Ic.inverse() *  momentum.vector());
+
+    BOOST_CHECK_SMALL((comVel - comVel6d.segment(3,3)).norm(),TOL);
+  
   }
 }
 
@@ -142,6 +158,7 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
       Vector3d oldCom = rbd::computeCoM(mb, mbc);
       ForceVecd oldMomentum = rbd::computeCentroidalMomentum(mb, mbc, oldCom);
       Vector3d oldComVel = rbd::computeCoMVelocity(mb, mbc);
+      Vector3d oldComAcc = rbd::computeCoMAcceleration(mb, mbc);
 
       ForceVecd momentumDot = rbd::computeCentroidalMomentumDot(mb, mbc, oldCom, oldComVel);
       cmm.computeMatrix(mb, mbc, oldCom);
@@ -160,6 +177,21 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
       BOOST_CHECK_SMALL((cmmMatrix - cmm.matrix()).norm(), TOL);
       BOOST_CHECK_SMALL((cmmMatrixDot - cmm.matrixDot()).norm(), TOL);
 
+      Eigen::Matrix6d Ic = Eigen::Matrix6d::Zero();
+      const sva::PTransformd X_0_c = sva::PTransformd(oldCom);
+      for( int i = 0; i < mb.nrBodies(); i++)
+      {
+        const auto I = mb.bodies()[i].inertia().matrix();
+        const auto X_0_b = mbc.bodyPosW[i];
+        const auto X_b_c = X_0_c * X_0_b.inv();
+
+        Ic += (X_b_c.dualMatrix() * I * X_b_c.inv().matrix()) ;
+      } 
+      auto oldComVel6d = sva::MotionVecd(Ic.inverse() * oldMomentum.vector());
+      auto oldCoMAcc6d = sva::MotionVecd(Ic.inverse() * (momentumDot - oldComVel6d.crossDual(oldMomentum)).vector() );
+
+      BOOST_CHECK_SMALL( (oldComAcc - oldCoMAcc6d.linear()).norm(),TOL );
+
       rbd::integration(mb, mbc, 1e-8);
 
       rbd::forwardKinematics(mb, mbc);
@@ -174,6 +206,8 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
       ForceVecd momentumDotDiff = (newMomentum - oldMomentum) * (1. / 1e-8);
 
       BOOST_CHECK_SMALL((momentumDot - momentumDotDiff).vector().norm(), TOL);
+
+
     }
   }
 
