@@ -20,6 +20,10 @@ namespace rbd
 class MultiBody;
 struct MultiBodyConfig;
 
+RBDYN_DLLAPI void resetCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc);
+
+RBDYN_DLLAPI void updateCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc,const double step);
+
 /**
  * Compute the Center of Mass (CoM) position of a multibody.
  * @param mb MultiBody used has model.

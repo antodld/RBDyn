@@ -46,6 +46,11 @@ RBDYN_DLLAPI sva::ForceVecd computeCentroidalMomentumDot(const MultiBody & mb,
                                                          const Eigen::Vector3d & com,
                                                          const Eigen::Vector3d & comDot);
 
+
+Eigen::Matrix6d centroidalInertia(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com);
+
+Eigen::Matrix6d centroidalInertiaDot(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com ,const Eigen::Vector3d & comDot);
+
 /**
  * Compute the Centroidal momentum matrix (Jacobian)
  * as describe in [Orin and Gosawami 2008].

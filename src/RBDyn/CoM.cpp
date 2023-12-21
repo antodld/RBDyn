@@ -8,9 +8,62 @@
 // RBDyn
 #include "RBDyn/MultiBody.h"
 #include "RBDyn/MultiBodyConfig.h"
+#include "RBDyn/NumericalIntegration.h"
+#include "RBDyn/Momentum.h"
 
 namespace rbd
 {
+
+void resetCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc)
+{
+  const Eigen::Vector3d com = computeCoM(mb,mbc);
+  mbc.com = sva::PTransformd(com);
+  
+  const Eigen::Matrix6d Ic = centroidalInertia(mb,mbc,com);
+  mbc.comVel = sva::MotionVecd( Ic.inverse() * computeCentroidalMomentum(mb,mbc,com).vector() );
+  // mbc.comVel = sva::MotionVecd(Eigen::Vector3d::Zero(),mbc.comVel.linear());
+
+
+  const Eigen::Matrix6d IcVel = centroidalInertiaDot(mb,mbc,com,mbc.comVel.linear());
+  mbc.comAcc = sva::MotionVecd( Ic.inverse() * ( computeCentroidalMomentumDot(mb,mbc,com,mbc.comVel.linear()).vector() - IcVel * mbc.comVel.vector()) );
+  // mbc.comAcc = sva::MotionVecd(Eigen::Vector3d::Zero(),mbc.comAcc.linear());
+
+  rbd::CentroidalMomentumMatrix cmm(mb);
+  cmm.computeMatrixAndMatrixDot(mb,mbc,com,mbc.comVel.linear());
+  mbc.Jcom = Ic.inverse() * cmm.matrix();
+  mbc.Jcomdot = Ic.inverse() * (cmm.matrixDot() - IcVel * mbc.Jcom);
+
+}
+
+void updateCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc,const double step)
+{
+  const Eigen::Vector3d com = computeCoM(mb,mbc);
+  // double a = step;
+  // a+=1;
+  auto qd = rbd::paramToVector(mb,mbc.alpha);
+  auto qdd = rbd::paramToVector(mb,mbc.alphaD);
+  mbc.comAcc = sva::MotionVecd( mbc.Jcom * qdd + mbc.Jcomdot * qd);
+
+  const Eigen::Quaterniond com_ori = Eigen::Quaterniond(mbc.com.rotation().transpose());
+  auto new_ori = rbd::SO3Integration(com_ori,mbc.comVel.angular(),mbc.comAcc.angular(),step);
+  mbc.com = sva::PTransformd(new_ori.first.toRotationMatrix().transpose(),computeCoM(mb,mbc));
+  // mbc.com = sva::PTransformd(com);
+
+  const Eigen::Matrix6d Ic = centroidalInertia(mb,mbc,com);
+  mbc.comVel = sva::MotionVecd( Ic.inverse() * computeCentroidalMomentum(mb,mbc,com).vector() );
+  // mbc.comVel = sva::MotionVecd(Eigen::Vector3d::Zero(),mbc.comVel.linear());
+
+  const Eigen::Matrix6d IcVel = centroidalInertiaDot(mb,mbc,com,mbc.comVel.linear());
+  // auto comAcc = sva::MotionVecd( Ic.inverse() * ( computeCentroidalMomentumDot(mb,mbc,com,mbc.comVel.linear()).vector() - IcVel * mbc.comVel.vector()) );
+  // mbc.comAcc = sva::MotionVecd(Eigen::Vector3d::Zero(),mbc.comAcc.linear());
+
+  rbd::CentroidalMomentumMatrix cmm(mb);
+  cmm.computeMatrixAndMatrixDot(mb,mbc,com,mbc.comVel.linear());
+  mbc.Jcom = Ic.inverse() * cmm.matrix();
+  mbc.Jcomdot = Ic.inverse() * (cmm.matrixDot() - IcVel * mbc.Jcom);
+  
+
+}
 
 Eigen::Vector3d computeCoM(const MultiBody & mb, const MultiBodyConfig & mbc)
 {
@@ -74,18 +127,15 @@ Eigen::Vector3d computeCoMAcceleration(const MultiBody & mb, const MultiBodyConf
 
     totalMass += mass;
 
-    // Acceleration at CoM : com_T_b·A_b
-    // Acceleration at CoM world frame :
-    //    0_R_b·com_T_b·A_b + 0_R_b_d·com_T_b·V_b
-    // O_R_b_d : (Angvel_W)_b x 0_R_b
-    sva::PTransformd X_0_iscaled(mbc.bodyPosW[i].rotation().transpose(), bodies[i].inertia().momentum());
-    sva::MotionVecd angvel_W(mbc.bodyVelW[i].angular(), Eigen::Vector3d::Zero());
 
-    sva::MotionVecd scaledBodyAccB(mbc.bodyAccB[i].angular(), mass * mbc.bodyAccB[i].linear());
-    sva::MotionVecd scaledBodyVelB(mbc.bodyVelB[i].angular(), mass * mbc.bodyVelB[i].linear());
+    const Eigen::Vector3d c = bodies[i].inertia().momentum()/mass;
 
-    comA += (X_0_iscaled * scaledBodyAccB).linear();
-    comA += (angvel_W.cross(X_0_iscaled * scaledBodyVelB)).linear();
+    const sva::PTransformd X_b_bc =sva::PTransformd(mbc.bodyPosW[i].rotation().transpose(),c); //bc0 is the body CoM frame (CoM frame orientation is identity )
+    const sva::MotionVecd v_bc = X_b_bc * mbc.bodyVelB[i];
+
+    const Eigen::Vector3d body_Acom = (X_b_bc * mbc.bodyAccB[i]).linear() + v_bc.angular().cross(v_bc.linear());
+    
+    comA += mass * body_Acom;
   }
 
   assert(totalMass > 0 && "Invalid multibody. Totalmass must be strictly positive");

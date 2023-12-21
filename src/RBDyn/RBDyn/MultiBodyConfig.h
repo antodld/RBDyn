@@ -70,6 +70,18 @@ struct RBDYN_DLLAPI MultiBodyConfig
   /// gravity acting on the multibody.
   Eigen::Vector3d gravity;
 
+  /// CoM frame, initialized with the orientation of the root link
+  sva::PTransformd com;
+
+  sva::MotionVecd comVel;
+
+  sva::MotionVecd comAcc;
+
+  Eigen::MatrixXd Jcom;
+
+  Eigen::MatrixXd Jcomdot;
+
+
   // python binding function
 
   std::vector<Eigen::MatrixXd> python_motionSubspace();

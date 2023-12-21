@@ -14,6 +14,43 @@
 namespace rbd
 {
 
+Eigen::Matrix6d centroidalInertia(const MultiBody & mb,
+                                  const MultiBodyConfig & mbc,
+                                  const Eigen::Vector3d & com)
+{
+  Eigen::Matrix6d Ic = Eigen::Matrix6d::Zero();
+  sva::PTransformd X_0_c = sva::PTransformd(com);
+  X_0_c = mbc.com;
+  for(int b = 0 ; b < mb.nrBodies() ; b++)
+  {
+    sva::PTransformd X_b_c = X_0_c * mbc.bodyPosW[b].inv();
+    Ic += X_b_c.dualMatrix() * mb.bodies()[b].inertia().matrix() * X_b_c.inv().matrix();
+  }
+  return Ic;
+}
+
+Eigen::Matrix6d centroidalInertiaDot(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com ,const Eigen::Vector3d & comDot)
+{
+  Eigen::Matrix6d IcDot= Eigen::Matrix6d::Zero();
+  sva::PTransformd X_0_c = sva::PTransformd(com);
+  X_0_c = mbc.com;
+
+  sva::MotionVecd v_com = sva::MotionVecd(Eigen::Vector3d::Zero(),comDot);
+  v_com = mbc.comVel;
+  for(int b = 0 ; b < mb.nrBodies() ; b++)
+  {
+    const sva::PTransformd X_b_c = X_0_c * mbc.bodyPosW[b].inv();
+    const sva::MotionVecd v_b = mbc.bodyVelB[b];
+    const sva::MotionVecd v_b_com = X_b_c * v_b;
+    const sva::MotionVecd v_com_b = X_b_c.inv() * v_com;
+    const Eigen::Matrix6d Ib = mb.bodies()[b].inertia().matrix();
+    const Eigen::Matrix6d X_b_c_dot_dual = sva::vector6ToCrossDualMatrix((v_b_com - v_com).vector()) * X_b_c.dualMatrix();
+    const Eigen::Matrix6d X_c_b_dot = sva::vector6ToCrossMatrix((v_com_b - v_b).vector()) * X_b_c.inv().matrix();
+    IcDot += X_b_c_dot_dual * Ib * X_b_c.inv().matrix() + X_b_c.dualMatrix() * Ib * X_c_b_dot;
+  }
+  return IcDot;
+}
+
 sva::ForceVecd computeCentroidalMomentum(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com)
 {
   using namespace Eigen;
@@ -22,6 +59,7 @@ sva::ForceVecd computeCentroidalMomentum(const MultiBody & mb, const MultiBodyCo
   Vector6d cm(Vector6d::Zero());
 
   sva::PTransformd X_com_0(Vector3d(-com));
+  X_com_0 = mbc.com.inv();
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     // body inertia in body coordinate
@@ -45,20 +83,24 @@ sva::ForceVecd computeCentroidalMomentumDot(const MultiBody & mb,
   Vector6d cm(Vector6d::Zero());
 
   sva::PTransformd X_0_com(com);
+  X_0_com = mbc.com;
   sva::MotionVecd com_Vel(Vector3d::Zero(), comDot);
+  com_Vel = mbc.comVel;
 
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
-    sva::MotionVecd body_i_Vel(mbc.bodyVelB[i]);
+    sva::MotionVecd v_i(mbc.bodyVelB[i]);
+    sva::MotionVecd a_i(mbc.bodyAccB[i]);
     sva::PTransformd X_com_i(mbc.bodyPosW[i] * X_0_com.inv());
     sva::PTransformd X_i_com(X_com_i.inv());
-
-    sva::ForceVecd body_i_Momentum(bodies[i].inertia() * body_i_Vel);
+    const sva::MotionVecd v_i_com = X_i_com * v_i;
+    Eigen::Matrix6d X_i_com_dual_dot = (sva::vector6ToCrossDualMatrix((v_i_com - com_Vel).vector()) * X_i_com.dualMatrix());
 
     const auto I = bodies[i].inertia();
+    sva::ForceVecd h_i(I * v_i);
 
     // transform in com coordinate
-    cm += X_i_com.dualMul( body_i_Vel.crossDual(I * body_i_Vel) + I * mbc.bodyAccB[i]).vector();
+    cm += X_i_com.dualMatrix() * (I * a_i).vector() + X_i_com_dual_dot * h_i.vector();
   }
 
   return sva::ForceVecd(cm);
@@ -136,6 +178,7 @@ void CentroidalMomentumMatrix::computeMatrix(const MultiBody & mb,
   cmMat_.setZero();
 
   sva::PTransformd X_0_com(com);
+  X_0_com = mbc.com;
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     const MatrixXd & jac = jacVec_[i].bodyJacobian(mb, mbc);
@@ -158,7 +201,9 @@ void CentroidalMomentumMatrix::computeMatrixDot(const MultiBody & mb,
   cmMatDot_.setZero();
 
   sva::PTransformd X_0_com(com);
+  X_0_com = mbc.com;
   sva::MotionVecd com_Vel(Vector3d::Zero(), comDot);
+  com_Vel = mbc.comVel;
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     const MatrixXd & jac = jacVec_[i].bodyJacobian(mb, mbc);
@@ -169,14 +214,16 @@ void CentroidalMomentumMatrix::computeMatrixDot(const MultiBody & mb,
 
     const sva::PTransformd X_i_com(X_0_com * (mbc.bodyPosW[i].inv()));
     const sva::MotionVecd V_i = mbc.bodyVelB[i];
-    const auto I = bodies[i].inertia().matrix();
+    const sva::MotionVecd V_i_com = X_i_com * V_i;
+    Eigen::Matrix6d X_i_com_dual_dot = (sva::vector6ToCrossDualMatrix((V_i_com - com_Vel).vector()) * X_i_com.dualMatrix());
 
-    const auto Idot = sva::vector6ToCrossDualMatrix(V_i.vector()) * I  ;
+
+    const auto I = bodies[i].inertia().matrix();
 
     jacVec_[i].fullJacobian(mb,jac,j_full);
     jacVec_[i].fullJacobian(mb,jacDot,jdot_full);
 
-    cmMatDot_ +=  X_i_com.dualMatrix() * (Idot * j_full + I * jdot_full);
+    cmMatDot_ += X_i_com.dualMatrix() * I * jdot_full + X_i_com_dual_dot * I * j_full;
 
   }
 }
@@ -191,6 +238,7 @@ void CentroidalMomentumMatrix::computeMatrixAndMatrixDot(const MultiBody & mb,
   computeMatrixDot(mb,mbc,com,comDot);
 
 }
+
 
 const Eigen::MatrixXd & CentroidalMomentumMatrix::matrix() const
 {
@@ -212,6 +260,7 @@ sva::ForceVecd CentroidalMomentumMatrix::momentum(const MultiBody & mb,
   Vector6d cm(Vector6d::Zero());
 
   sva::PTransformd X_com_0(Vector3d(-com));
+  X_com_0 = mbc.com.inv();
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     // body inertia in body coordinate
@@ -264,19 +313,20 @@ sva::ForceVecd CentroidalMomentumMatrix::normalMomentumDot(const MultiBody & mb,
   Vector6d cm(Vector6d::Zero());
 
   sva::PTransformd X_com_0(Vector3d(-com));
+  X_com_0 = mbc.com.inv();
   sva::MotionVecd com_Vel(Vector3d::Zero(), comDot);
+  com_Vel = mbc.comVel;
 
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
-    sva::MotionVecd body_i_Vel(mbc.bodyVelB[i]);
+    sva::MotionVecd v_i(mbc.bodyVelB[i]);
     sva::PTransformd X_com_i(mbc.bodyPosW[i] * X_com_0);
-
-    sva::ForceVecd body_i_Momentum(bodies[i].inertia() * body_i_Vel);
-
+    sva::MotionVecd v_i_com = X_com_i.inv() * v_i;
+    Eigen::Matrix6d X_i_com_dual_dot = (sva::vector6ToCrossDualMatrix((v_i_com - com_Vel).vector()) * X_com_i.inv().dualMatrix());
     const auto I = bodies[i].inertia();
+    sva::ForceVecd h_i(I * v_i);
 
-    // transform in com coordinate
-    cm += X_com_i.transMul( I * normalAccB[i] + body_i_Vel.crossDual(I * body_i_Vel)).vector();
+    cm += X_com_i.matrix().transpose() * I.matrix() * normalAccB[i].vector() + X_i_com_dual_dot * h_i.vector();
   }
 
   return sva::ForceVecd(cm);

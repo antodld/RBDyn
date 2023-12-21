@@ -44,6 +44,8 @@ BOOST_AUTO_TEST_CASE(centroidalMomentum)
     rbd::forwardKinematics(mb, mbc);
     rbd::forwardVelocity(mb, mbc);
     rbd::paramToVector(mbc.alpha, alpha);
+    rbd::resetCoMFrame(mb,mbc);
+
 
     Vector3d com = rbd::computeCoM(mb, mbc);
     ForceVecd momentum = rbd::computeCentroidalMomentum(mb, mbc, com);
@@ -66,14 +68,18 @@ BOOST_AUTO_TEST_CASE(centroidalMomentum)
 
     rbd::forwardKinematics(mb, mbc);
     rbd::forwardVelocity(mb, mbc);
+    rbd::resetCoMFrame(mb,mbc);
 
     Vector3d com = rbd::computeCoM(mb, mbc);
+    Vector3d comVel = rbd::computeCoMVelocity(mb, mbc);
     ForceVecd momentum = rbd::computeCentroidalMomentum(mb, mbc, com);
     cmm.computeMatrix(mb, mbc, com);
 
     ForceVecd momentumM(cmm.matrix() * alpha);
 
     BOOST_CHECK_SMALL((momentum - momentumM).vector().norm(), TOL);
+    BOOST_CHECK_SMALL((comVel - mbc.comVel.linear()).norm(), TOL);
+
   }
 
   // test J·q against CentroidalMomentumMatrix::momentum
@@ -90,11 +96,13 @@ BOOST_AUTO_TEST_CASE(centroidalMomentum)
     q.setRandom();
     q.segment<4>(mb.jointPosInParam(mb.jointIndexByName("j3"))).normalize();
     alpha.setRandom();
+
     rbd::vectorToParam(q, mbc.q);
     rbd::vectorToParam(alpha, mbc.alpha);
 
     rbd::forwardKinematics(mb, mbc);
     rbd::forwardVelocity(mb, mbc);
+    rbd::resetCoMFrame(mb,mbc);
 
     Vector3d com = rbd::computeCoM(mb, mbc);
     ForceVecd momentum = cmmW.momentum(mb, mbc, com);
@@ -136,12 +144,22 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
     rbd::forwardKinematics(mb, mbc);
     rbd::forwardVelocity(mb, mbc);
     rbd::forwardAcceleration(mb, mbc);
+    rbd::resetCoMFrame(mb,mbc);
 
     for(int j = 0; j < 10; ++j)
     {
       Vector3d oldCom = rbd::computeCoM(mb, mbc);
       ForceVecd oldMomentum = rbd::computeCentroidalMomentum(mb, mbc, oldCom);
       Vector3d oldComVel = rbd::computeCoMVelocity(mb, mbc);
+      // Vector3d oldComAcc = rbd::computeCoMAcceleration(mb, mbc);
+
+      sva::MotionVecd oldComVel6D = mbc.comVel;
+      sva::MotionVecd oldComAcc6D = mbc.comAcc;
+
+      Eigen::Matrix6d oldIc = rbd::centroidalInertia(mb,mbc,oldCom);
+      Eigen::Matrix6d IcDot = rbd::centroidalInertiaDot(mb,mbc,oldCom,oldComVel);
+
+      sva::PTransformd E_com_0 = sva::PTransformd(mbc.com.rotation()).inv();
 
       ForceVecd momentumDot = rbd::computeCentroidalMomentumDot(mb, mbc, oldCom, oldComVel);
       cmm.computeMatrix(mb, mbc, oldCom);
@@ -159,21 +177,32 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
 
       BOOST_CHECK_SMALL((cmmMatrix - cmm.matrix()).norm(), TOL);
       BOOST_CHECK_SMALL((cmmMatrixDot - cmm.matrixDot()).norm(), TOL);
+      BOOST_CHECK_SMALL( ( (E_com_0 * oldComVel6D).linear() - oldComVel).norm() , TOL);
+      // BOOST_CHECK_SMALL( ( (E_com_0 * oldComAcc6D).linear() - oldComAcc).norm() , TOL);
 
       rbd::integration(mb, mbc, 1e-8);
-
+      
       rbd::forwardKinematics(mb, mbc);
       rbd::forwardVelocity(mb, mbc);
       rbd::forwardAcceleration(mb, mbc);
+      rbd::updateCoMFrame(mb,mbc,1e-8);
 
       rbd::paramToVector(mbc.alpha, alpha);
       rbd::paramToVector(mbc.alphaD, alphaD);
 
       Vector3d newCom = rbd::computeCoM(mb, mbc);
+      sva::MotionVecd comAcc6DDiff = (mbc.comVel - oldComVel6D) * (1/ 1e-8);
+      auto comAccDiff = (rbd::computeCoMVelocity(mb,mbc) - oldComVel) / 1e-8;
+      Eigen::Matrix6d newIc = rbd::centroidalInertia(mb,mbc,newCom);
+      Eigen::Matrix6d IcDotDiff = (newIc - oldIc) * (1. / 1e-8);
+
       ForceVecd newMomentum = rbd::computeCentroidalMomentum(mb, mbc, newCom);
       ForceVecd momentumDotDiff = (newMomentum - oldMomentum) * (1. / 1e-8);
 
       BOOST_CHECK_SMALL((momentumDot - momentumDotDiff).vector().norm(), TOL);
+      BOOST_CHECK_SMALL((IcDotDiff - IcDot).norm(), TOL);
+      BOOST_CHECK_SMALL((comAcc6DDiff - oldComAcc6D).vector().norm(), TOL);
+      BOOST_CHECK_SMALL((comAccDiff - rbd::computeCoMAcceleration(mb,mbc)).norm(), TOL);
     }
   }
 
@@ -200,6 +229,7 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
     rbd::forwardKinematics(mb, mbc);
     rbd::forwardVelocity(mb, mbc);
     rbd::forwardAcceleration(mb, mbc);
+    rbd::resetCoMFrame(mb,mbc);
 
     Vector3d com = rbd::computeCoM(mb, mbc);
     Vector3d comDot = rbd::computeCoMVelocity(mb, mbc);
