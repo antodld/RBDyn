@@ -49,6 +49,10 @@ RBDYN_DLLAPI sva::ForceVecd computeCentroidalMomentumDot(const MultiBody & mb,
 
 Eigen::Matrix6d centroidalInertia(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com);
 
+double kineticEnergy(const MultiBody & mb, const MultiBodyConfig & mbc);
+
+double centroidalKineticEnergy(const MultiBody & mb, const MultiBodyConfig & mbc);
+
 Eigen::Matrix6d centroidalInertiaDot(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com ,const Eigen::Vector3d & comDot);
 
 /**

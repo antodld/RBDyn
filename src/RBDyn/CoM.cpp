@@ -17,7 +17,7 @@ namespace rbd
 void resetCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc)
 {
   const Eigen::Vector3d com = computeCoM(mb,mbc);
-  mbc.com = sva::PTransformd(com);
+  mbc.com = sva::PTransformd(mbc.bodyPosW[0].rotation(),com);
   
   const Eigen::Matrix6d Ic = centroidalInertia(mb,mbc,com);
   mbc.comVel = sva::MotionVecd( Ic.inverse() * computeCentroidalMomentum(mb,mbc,com).vector() );
@@ -38,15 +38,14 @@ void resetCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc)
 void updateCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc,const double step)
 {
   const Eigen::Vector3d com = computeCoM(mb,mbc);
-  // double a = step;
-  // a+=1;
+
   auto qd = rbd::paramToVector(mb,mbc.alpha);
   auto qdd = rbd::paramToVector(mb,mbc.alphaD);
   mbc.comAcc = sva::MotionVecd( mbc.Jcom * qdd + mbc.Jcomdot * qd);
-
+  
   const Eigen::Quaterniond com_ori = Eigen::Quaterniond(mbc.com.rotation().transpose());
   auto new_ori = rbd::SO3Integration(com_ori,mbc.comVel.angular(),mbc.comAcc.angular(),step);
-  mbc.com = sva::PTransformd(new_ori.first.toRotationMatrix().transpose(),computeCoM(mb,mbc));
+  mbc.com = sva::PTransformd(new_ori.first.toRotationMatrix().transpose(),com);
   // mbc.com = sva::PTransformd(com);
 
   const Eigen::Matrix6d Ic = centroidalInertia(mb,mbc,com);
@@ -98,18 +97,18 @@ Eigen::Vector3d computeCoMVelocity(const MultiBody & mb, const MultiBodyConfig &
 
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
-    double mass = bodies[i].inertia().mass();
+    const double mass = bodies[i].inertia().mass();
+
+    const Eigen::Vector3d c = bodies[i].inertia().momentum()/mass;
+
+    const sva::PTransformd X_b_bc =sva::PTransformd(mbc.bodyPosW[i].rotation().transpose(),c); //bc0 is the body CoM frame (CoM frame orientation is identity )
+    const sva::MotionVecd v_bc = X_b_bc * mbc.bodyVelB[i];
+    
+    comV += mass * v_bc.linear();
     totalMass += mass;
 
-    // Velocity at CoM : com_T_b·V_b
-    // Velocity at CoM world frame : 0_R_b·com_T_b·V_b
-    sva::PTransformd X_0_i(mbc.bodyPosW[i].rotation().transpose(), bodies[i].inertia().momentum());
-    sva::MotionVecd scaledBodyVelB(mbc.bodyVelB[i].angular(), mass * mbc.bodyVelB[i].linear());
-    comV += (X_0_i * scaledBodyVelB).linear();
   }
-
-  assert(totalMass > 0 && "Invalid multibody. Totalmass must be strictly positive");
-  return comV / totalMass;
+  return comV/totalMass;
 }
 
 Eigen::Vector3d computeCoMAcceleration(const MultiBody & mb, const MultiBodyConfig & mbc)

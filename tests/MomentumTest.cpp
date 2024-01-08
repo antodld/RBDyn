@@ -35,7 +35,7 @@ BOOST_AUTO_TEST_CASE(centroidalMomentum)
   rbd::MultiBodyConfig mbc;
   rbd::MultiBodyGraph mbg;
   std::tie(mb, mbc, mbg) = makeXYZSarm();
-
+  
   VectorXd q(mb.nrParams());
   VectorXd alpha(mb.nrDof());
   CentroidalMomentumMatrix cmm(mb);
@@ -131,6 +131,8 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
   VectorXd alpha(mb.nrDof());
   VectorXd alphaD(mb.nrDof());
 
+  const double step = 1e-8;
+
   for(int i = 0; i < 10; ++i)
   {
     q.setRandom();
@@ -145,13 +147,12 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
     rbd::forwardVelocity(mb, mbc);
     rbd::forwardAcceleration(mb, mbc);
     rbd::resetCoMFrame(mb,mbc);
-
-    for(int j = 0; j < 10; ++j)
+    for(int j = 0; j < 1000; ++j)
     {
-      Vector3d oldCom = rbd::computeCoM(mb, mbc);
+      Eigen::Vector3d oldCom = rbd::computeCoM(mb, mbc);
       ForceVecd oldMomentum = rbd::computeCentroidalMomentum(mb, mbc, oldCom);
-      Vector3d oldComVel = rbd::computeCoMVelocity(mb, mbc);
-      // Vector3d oldComAcc = rbd::computeCoMAcceleration(mb, mbc);
+      Eigen::Vector3d oldComVel = rbd::computeCoMVelocity(mb, mbc);
+      Eigen::Vector3d oldComAcc = rbd::computeCoMAcceleration(mb, mbc);
 
       sva::MotionVecd oldComVel6D = mbc.comVel;
       sva::MotionVecd oldComAcc6D = mbc.comAcc;
@@ -164,8 +165,8 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
       ForceVecd momentumDot = rbd::computeCentroidalMomentumDot(mb, mbc, oldCom, oldComVel);
       cmm.computeMatrix(mb, mbc, oldCom);
       cmm.computeMatrixDot(mb, mbc, oldCom, oldComVel);
-      MatrixXd cmmMatrix = cmm.matrix();
-      MatrixXd cmmMatrixDot = cmm.matrixDot();
+      Eigen::MatrixXd cmmMatrix = cmm.matrix();
+      Eigen::MatrixXd cmmMatrixDot = cmm.matrixDot();
       Vector6d momentumDotCMM = cmmMatrix * alphaD + cmmMatrixDot * alpha;
 
       // check that the momentum are the same
@@ -178,31 +179,34 @@ BOOST_AUTO_TEST_CASE(centroidalMomentumDot)
       BOOST_CHECK_SMALL((cmmMatrix - cmm.matrix()).norm(), TOL);
       BOOST_CHECK_SMALL((cmmMatrixDot - cmm.matrixDot()).norm(), TOL);
       BOOST_CHECK_SMALL( ( (E_com_0 * oldComVel6D).linear() - oldComVel).norm() , TOL);
-      // BOOST_CHECK_SMALL( ( (E_com_0 * oldComAcc6D).linear() - oldComAcc).norm() , TOL);
+      BOOST_CHECK_SMALL( ( (E_com_0 * oldComAcc6D).linear() - oldComAcc).norm() , TOL);
+      
 
-      rbd::integration(mb, mbc, 1e-8);
+      rbd::integration(mb, mbc, step);
       
       rbd::forwardKinematics(mb, mbc);
       rbd::forwardVelocity(mb, mbc);
       rbd::forwardAcceleration(mb, mbc);
-      rbd::updateCoMFrame(mb,mbc,1e-8);
+      rbd::updateCoMFrame(mb,mbc,step);
 
       rbd::paramToVector(mbc.alpha, alpha);
       rbd::paramToVector(mbc.alphaD, alphaD);
 
       Vector3d newCom = rbd::computeCoM(mb, mbc);
-      sva::MotionVecd comAcc6DDiff = (mbc.comVel - oldComVel6D) * (1/ 1e-8);
-      auto comAccDiff = (rbd::computeCoMVelocity(mb,mbc) - oldComVel) / 1e-8;
-      Eigen::Matrix6d newIc = rbd::centroidalInertia(mb,mbc,newCom);
-      Eigen::Matrix6d IcDotDiff = (newIc - oldIc) * (1. / 1e-8);
+      MotionVecd comAcc6DDiff = (mbc.comVel - oldComVel6D) * (1/ step);
+      auto comAccDiff = (rbd::computeCoMVelocity(mb,mbc) - oldComVel) / step;
+      Matrix6d newIc = rbd::centroidalInertia(mb,mbc,newCom);
+      Matrix6d newIcDiff = oldIc + IcDot * step;
 
       ForceVecd newMomentum = rbd::computeCentroidalMomentum(mb, mbc, newCom);
-      ForceVecd momentumDotDiff = (newMomentum - oldMomentum) * (1. / 1e-8);
+      ForceVecd momentumDotDiff = (newMomentum - oldMomentum) * (1. / step);
 
       BOOST_CHECK_SMALL((momentumDot - momentumDotDiff).vector().norm(), TOL);
-      BOOST_CHECK_SMALL((IcDotDiff - IcDot).norm(), TOL);
+      BOOST_CHECK_SMALL((newIcDiff - newIc).norm(), TOL);
       BOOST_CHECK_SMALL((comAcc6DDiff - oldComAcc6D).vector().norm(), TOL);
-      BOOST_CHECK_SMALL((comAccDiff - rbd::computeCoMAcceleration(mb,mbc)).norm(), TOL);
+      BOOST_CHECK_SMALL((comAccDiff - oldComAcc).norm(), TOL);
+      BOOST_CHECK_SMALL((newCom - mbc.com.translation()).norm(),TOL);
+
     }
   }
 
