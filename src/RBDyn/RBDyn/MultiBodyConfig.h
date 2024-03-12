@@ -72,6 +72,7 @@ struct RBDYN_DLLAPI MultiBodyConfig
 
   /// CoM frame, initialized with the orientation of the root link
   sva::PTransformd com;
+  std::vector<double> com_ori;
 
   sva::MotionVecd comVel;
 
@@ -80,7 +81,6 @@ struct RBDYN_DLLAPI MultiBodyConfig
   Eigen::MatrixXd Jcom;
 
   Eigen::MatrixXd Jcomdot;
-
 
   // python binding function
 

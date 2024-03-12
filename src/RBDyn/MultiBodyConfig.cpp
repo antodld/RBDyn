@@ -22,7 +22,8 @@ MultiBodyConfig::MultiBodyConfig(const MultiBody & mb)
   jointTorque(static_cast<size_t>(mb.nrJoints())), motionSubspace(static_cast<size_t>(mb.nrJoints())),
   bodyPosW(static_cast<size_t>(mb.nrBodies())), parentToSon(static_cast<size_t>(mb.nrBodies())),
   bodyVelW(static_cast<size_t>(mb.nrBodies())), bodyVelB(static_cast<size_t>(mb.nrBodies())),
-  bodyAccB(static_cast<size_t>(mb.nrBodies())), gravity(0., 9.81, 0.), com(sva::PTransformd::Identity()), comVel(sva::MotionVecd::Zero()), comAcc(sva::MotionVecd::Zero())
+  bodyAccB(static_cast<size_t>(mb.nrBodies())), gravity(0., 9.81, 0.), com(sva::PTransformd::Identity()),
+  comVel(sva::MotionVecd::Zero()), comAcc(sva::MotionVecd::Zero())
 {
   for(int i = 0; i < static_cast<int>(q.size()); ++i)
   {
@@ -35,7 +36,7 @@ MultiBodyConfig::MultiBodyConfig(const MultiBody & mb)
     jointTorque[ui].resize(static_cast<size_t>(mb.joint(i).dof()));
     motionSubspace[ui].resize(6, mb.joint(i).dof());
   }
-  Jcom = Eigen::MatrixXd::Zero(6,mb.nrDof());
+  Jcom = Eigen::MatrixXd::Zero(6, mb.nrDof());
   Jcomdot = Jcom;
 }
 
@@ -58,11 +59,11 @@ void MultiBodyConfig::zero(const MultiBody & mb)
   }
 
   com = sva::PTransformd::Identity();
+  com_ori = {1, 0, 0, 0};
   comVel = sva::MotionVecd::Zero();
   comAcc = sva::MotionVecd::Zero();
-  Jcom = Eigen::MatrixXd::Zero(6,mb.nrDof());
+  Jcom = Eigen::MatrixXd::Zero(6, mb.nrDof());
   Jcomdot = Jcom;
-
 }
 
 std::vector<Eigen::MatrixXd> MultiBodyConfig::python_motionSubspace()

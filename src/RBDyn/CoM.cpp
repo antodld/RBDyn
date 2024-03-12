@@ -18,7 +18,9 @@ namespace rbd
 void resetCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc)
 {
   const Eigen::Vector3d com = computeCoM(mb, mbc);
-  mbc.com = sva::PTransformd(mbc.bodyPosW[0].rotation(), com);
+  auto quat = Eigen::Quaterniond(mbc.bodyPosW[0].rotation().transpose());
+  mbc.com_ori = {quat.w(), quat.x(), quat.y(), quat.z()};
+  mbc.com = sva::PTransformd(QuatToE<double>(mbc.com_ori), com);
   // mbc.com = sva::PTransformd(com);
 
   const Eigen::Matrix6d Ic = centroidalInertia(mb, mbc, com);
@@ -49,12 +51,13 @@ void updateCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc, const double st
 
   mbc.comAcc = mbc.comAcc + sva::MotionVecd(Eigen::Vector3d::Zero(), mbc.comVel.angular().cross(mbc.comVel.linear()));
 
-  const Eigen::Quaterniond com_ori = Eigen::Quaterniond(mbc.com.rotation());
+  const Eigen::Quaterniond com_ori(mbc.com_ori[0], mbc.com_ori[1], mbc.com_ori[2], mbc.com_ori[3]);
+  ;
   const auto new_ori = rbd::SO3Integration(com_ori, mbc.comVel.angular(), mbc.comAcc.angular(), step).first;
   const double nq = new_ori.norm();
-  std::vector<double> ori = {new_ori.w() / nq, new_ori.x() / nq, new_ori.y() / nq, new_ori.z() / nq};
-  mbc.com = sva::PTransformd(QuatToE(ori), com);
-  mbc.com = sva::PTransformd(com);
+  mbc.com_ori = {new_ori.w() / nq, new_ori.x() / nq, new_ori.y() / nq, new_ori.z() / nq};
+  mbc.com = sva::PTransformd(QuatToE(mbc.com_ori), com);
+  // mbc.com = sva::PTransformd(com);
 
   // std::cout << mbc.comAcc.angular() << std::endl;
   // std::cout << mbc.com.rotation() << std::endl;
@@ -63,14 +66,14 @@ void updateCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc, const double st
   const auto Ic_inv = Ic.inverse();
   mbc.comVel = sva::MotionVecd(Ic_inv * computeCentroidalMomentum(mb, mbc, com).vector());
 
-  mbc.comVel = sva::MotionVecd(Eigen::Vector3d::Zero(), mbc.comVel.linear());
+  // mbc.comVel = sva::MotionVecd(Eigen::Vector3d::Zero(), mbc.comVel.linear());
 
   mbc.comAcc =
       sva::MotionVecd(Ic_inv
                       * (computeCentroidalMomentumDot(mb, mbc, com, mbc.comVel.linear()).vector()
                          - sva::vector6ToCrossDualMatrix<double>(mbc.comVel.vector()) * Ic * mbc.comVel.vector()));
   mbc.comAcc += sva::MotionVecd(Eigen::Vector3d::Zero(), mbc.comVel.angular().cross(mbc.comVel.linear()));
-  mbc.comAcc = sva::MotionVecd(Eigen::Vector3d::Zero(), mbc.comAcc.linear());
+  // mbc.comAcc = sva::MotionVecd(Eigen::Vector3d::Zero(), mbc.comAcc.linear());
 
   rbd::CentroidalMomentumMatrix cmm(mb);
   cmm.computeMatrixAndMatrixDot(mb, mbc, com, mbc.comVel.linear());
@@ -90,10 +93,9 @@ Eigen::Vector3d computeCoM(const MultiBody & mb, const MultiBodyConfig & mbc)
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     double mass = bodies[i].inertia().mass();
-
+    const Eigen::Vector3d c = bodies[i].inertia().momentum() / mass;
     totalMass += mass;
-    sva::PTransformd scaledBobyPosW(mbc.bodyPosW[i].rotation(), mass * mbc.bodyPosW[i].translation());
-    com += (sva::PTransformd(bodies[i].inertia().momentum()) * scaledBobyPosW).translation();
+    com += mass * (sva::PTransformd(c) * mbc.bodyPosW[i]).translation();
   }
 
   assert(totalMass > 0 && "Invalid multibody. Totalmass must be strictly positive");
@@ -105,21 +107,16 @@ Eigen::Vector3d computeCoMVelocity(const MultiBody & mb, const MultiBodyConfig &
   using namespace Eigen;
 
   const std::vector<Body> & bodies = mb.bodies();
-
   Vector3d comV = Vector3d::Zero();
   double totalMass = 0.;
 
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     const double mass = bodies[i].inertia().mass();
-
     const Eigen::Vector3d c = bodies[i].inertia().momentum() / mass;
+    const auto v_b_c = sva::PTransformd(mbc.bodyPosW[i].rotation().transpose(), c) * mbc.bodyVelB[i];
 
-    const sva::PTransformd X_b_bc = sva::PTransformd(
-        mbc.bodyPosW[i].rotation().transpose(), c); // bc0 is the body CoM frame (CoM frame orientation is identity )
-    const sva::MotionVecd v_bc = X_b_bc * mbc.bodyVelB[i];
-
-    comV += mass * v_bc.linear();
+    comV += mass * v_b_c.linear();
     totalMass += mass;
   }
   return comV / totalMass;

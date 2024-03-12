@@ -26,6 +26,9 @@
 // arm
 #include "XYZarm.h"
 
+// tree
+#include "Tree30Dof.h"
+
 namespace rbd
 {
 
@@ -139,11 +142,11 @@ BOOST_AUTO_TEST_CASE(computeCoMTest)
   mbg.linkBodies("b1", to, "b2", from, "j1");
   mbg.linkBodies("b2", to, "b3", from, "j2");
 
-  MultiBody mb = mbg.makeMultiBody("b0", true);
+  MultiBody mb = mbg.makeMultiBody("b0", false);
   MultiBodyConfig mbc(mb);
   mbc.zero(mb);
 
-  mbc.q = {{}, {0.}, {0.}, {0.}};
+  mbc.q = {{1, 0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}};
 
   forwardKinematics(mb, mbc);
   forwardVelocity(mb, mbc);
@@ -160,7 +163,7 @@ BOOST_AUTO_TEST_CASE(computeCoMTest)
   BOOST_CHECK_EQUAL(CoMV, Vector3d::Zero());
   BOOST_CHECK_EQUAL(CoMA, Vector3d::Zero());
 
-  mbc.q = {{}, {rbd::PI / 2.}, {0.}, {0.}};
+  mbc.q = {{1, 0, 0, 0, 0, 0, 0}, {rbd::PI / 2.}, {0.}, {0.}};
   forwardKinematics(mb, mbc);
   forwardVelocity(mb, mbc);
   forwardAcceleration(mb, mbc);
@@ -191,20 +194,18 @@ BOOST_AUTO_TEST_CASE(computeCoMTest)
   BOOST_CHECK_THROW(sComputeCoMAcceleration(mb, mbc), std::domain_error);
 }
 
-Eigen::Vector3d makeCoMDotFromStep(const rbd::MultiBody & mb, const rbd::MultiBodyConfig & mbc)
+Eigen::Vector3d makeCoMDotFromStep(const rbd::MultiBody & mb, rbd::MultiBodyConfig mbc)
 {
   using namespace Eigen;
   using namespace rbd;
 
   double step = 1e-8;
 
-  MultiBodyConfig mbcTmp(mbc);
-
-  Vector3d oC = computeCoM(mb, mbcTmp);
-  integration(mb, mbcTmp, step);
-  forwardKinematics(mb, mbcTmp);
-  forwardVelocity(mb, mbcTmp);
-  Vector3d nC = computeCoM(mb, mbcTmp);
+  Vector3d oC = computeCoM(mb, mbc);
+  integration(mb, mbc, step);
+  forwardKinematics(mb, mbc);
+  forwardVelocity(mb, mbc);
+  Vector3d nC = computeCoM(mb, mbc);
 
   return (nC - oC) / step;
 }
@@ -242,7 +243,7 @@ BOOST_AUTO_TEST_CASE(CoMJacobianDummyTest)
   MultiBody mb;
   MultiBodyConfig mbc;
 
-  std::tie(mb, mbc, mbg) = makeXYZSarmRandomCoM();
+  std::tie(mb, mbc, mbg) = makeXYZSarmRandomCoM(false);
 
   CoMJacobianDummy comJac(mb);
 
@@ -250,10 +251,6 @@ BOOST_AUTO_TEST_CASE(CoMJacobianDummyTest)
    *						Test jacobian with the com speed get by differentiation.
    *						Also test computeCoMVelocity and computeCoMAcceleration.
    */
-
-  mbc.q = {{}, {0.}, {0.}, {0.}, {1., 0., 0., 0.}};
-  mbc.alpha = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
-  mbc.alphaD = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
 
   forwardKinematics(mb, mbc);
 
@@ -310,8 +307,8 @@ BOOST_AUTO_TEST_CASE(CoMJacobianDummyTest)
       testJacCoMVelAcc(mb, mbc, comJac);
     }
   }
-  mbc.alpha = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
-  mbc.alphaD = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
+  mbc.alpha = {{0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}, {0., 0., 0.}};
+  mbc.alphaD = {{0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}, {0., 0., 0.}};
 
   /**
    * Same test but with a different q.
@@ -319,7 +316,7 @@ BOOST_AUTO_TEST_CASE(CoMJacobianDummyTest)
 
   Quaterniond q;
   q = AngleAxisd(rbd::PI / 8., Vector3d::UnitZ());
-  mbc.q = {{}, {0.4}, {0.2}, {-0.1}, {q.w(), q.x(), q.y(), q.z()}};
+  mbc.q = {{1, 0, 0, 0, 0, 0, 0}, {0.4}, {0.2}, {-0.1}, {q.w(), q.x(), q.y(), q.z()}};
   forwardKinematics(mb, mbc);
 
   for(int i = 0; i < mb.nrJoints(); ++i)
@@ -350,7 +347,7 @@ BOOST_AUTO_TEST_CASE(CoMJacobianDummyTest)
       testJacCoMVelAcc(mb, mbc, comJac);
     }
   }
-  mbc.alphaD = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
+  mbc.alphaD = {{0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}, {0., 0., 0.}};
 
   // test safe functions
 
@@ -362,9 +359,9 @@ BOOST_AUTO_TEST_CASE(CoMJacobianDummyTest)
    *						Test jacobianDot with the jacobianDot get by differentiation.
    */
 
-  mbc.q = {{}, {0.}, {0.}, {0.}, {1., 0., 0., 0.}};
-  mbc.alpha = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
-  mbc.alphaD = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
+  mbc.q = {{1, 0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}, {1., 0., 0., 0.}};
+  mbc.alpha = {{1, 0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}, {0., 0., 0.}};
+  mbc.alphaD = {{1, 0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}, {0., 0., 0.}};
 
   forwardKinematics(mb, mbc);
 
@@ -409,14 +406,14 @@ BOOST_AUTO_TEST_CASE(CoMJacobianDummyTest)
       mbc.alpha[ui][uj] = 0.;
     }
   }
-  mbc.alpha = {{}, {0.}, {0.}, {0.}, {0., 0., 0.}};
+  mbc.alpha = {{0, 0, 0, 0, 0, 0}, {0.}, {0.}, {0.}, {0., 0., 0.}};
 
   /**
    * Same test but with a different q.
    */
 
   q = AngleAxisd(rbd::PI / 8., Vector3d::UnitZ());
-  mbc.q = {{}, {0.4}, {0.2}, {-0.1}, {q.w(), q.x(), q.y(), q.z()}};
+  mbc.q = {{1, 0, 0, 0, 0, 0, 0}, {0.4}, {0.2}, {-0.1}, {q.w(), q.x(), q.y(), q.z()}};
   forwardKinematics(mb, mbc);
 
   for(int i = 0; i < mb.nrJoints(); ++i)
@@ -488,7 +485,7 @@ BOOST_AUTO_TEST_CASE(CoMJacobianTest)
   MultiBody mb;
   MultiBodyConfig mbc;
 
-  std::tie(mb, mbc, mbg) = makeXYZSarmRandomCoM();
+  std::tie(mb, mbc, mbg) = makeXYZSarmRandomCoM(false);
 
   std::vector<double> weight(static_cast<size_t>(mb.nrBodies()));
   for(std::size_t i = 0; i < weight.size(); ++i)
@@ -514,7 +511,7 @@ BOOST_AUTO_TEST_CASE(CoMJacobianTest)
   // change configuration
   Quaterniond q;
   q = AngleAxisd(rbd::PI / 8., Vector3d::UnitZ());
-  mbc.q = {{}, {0.4}, {0.2}, {-0.1}, {q.w(), q.x(), q.y(), q.z()}};
+  mbc.q = {{1, 0, 0, 0, 0, 0, 0}, {0.4}, {0.2}, {-0.1}, {q.w(), q.x(), q.y(), q.z()}};
   forwardKinematics(mb, mbc);
 
   jacMat = comJac.jacobian(mb, mbc);
@@ -597,7 +594,7 @@ BOOST_AUTO_TEST_CASE(CoMJacobianTest)
   }
 
   // create a multibody with new inertial parameter to test updateInertialParameters
-  std::tie(mb, mbc, mbg) = makeXYZSarmRandomCoM();
+  std::tie(mb, mbc, mbg) = makeXYZSarmRandomCoM(false);
 
   MultiBodyGraph badMbg;
   MultiBody badMb;

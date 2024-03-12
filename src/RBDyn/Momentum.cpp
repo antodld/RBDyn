@@ -21,7 +21,7 @@ Eigen::Matrix6d centroidalInertia(const MultiBody & mb, const MultiBodyConfig & 
   X_0_c = mbc.com;
   for(int b = 0; b < mb.nrBodies(); b++)
   {
-    sva::PTransformd X_b_c = X_0_c * mbc.bodyPosW[b].inv();
+    const sva::PTransformd X_b_c = X_0_c * mbc.bodyPosW[b].inv();
     Ic += X_b_c.dualMatrix() * mb.bodies()[b].inertia().matrix() * X_b_c.inv().matrix();
   }
   return Ic;
@@ -108,7 +108,7 @@ sva::ForceVecd computeCentroidalMomentumDot(const MultiBody & mb,
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     const MotionVecd v_i(mbc.bodyVelB[i]);
-    const MotionVecd a_i = mbc.bodyAccB[i];
+    const MotionVecd a_i(mbc.bodyAccB[i]);
     const PTransformd X_com_i(mbc.bodyPosW[i] * X_0_com.inv());
 
     const auto I = bodies[i].inertia();
