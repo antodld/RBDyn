@@ -17,8 +17,7 @@ namespace rbd
 Eigen::Matrix6d centroidalInertia(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com)
 {
   Eigen::Matrix6d Ic = Eigen::Matrix6d::Zero();
-  sva::PTransformd X_0_c = sva::PTransformd(com);
-  X_0_c = mbc.com;
+  const sva::PTransformd X_0_c = sva::PTransformd(mbc.com.rotation(), com);
   for(int b = 0; b < mb.nrBodies(); b++)
   {
     const sva::PTransformd X_b_c = X_0_c * mbc.bodyPosW[b].inv();
@@ -51,8 +50,7 @@ Eigen::Matrix6d centroidalInertiaDot(const MultiBody & mb,
                                      const Eigen::Vector3d & comDot)
 {
   Eigen::Matrix6d IcDot = Eigen::Matrix6d::Zero();
-  sva::PTransformd X_0_c = sva::PTransformd(com);
-  X_0_c = mbc.com;
+  sva::PTransformd X_0_c = sva::PTransformd(mbc.com.rotation(), com);
 
   sva::MotionVecd v_com = sva::MotionVecd(Eigen::Vector3d::Zero(), comDot);
   v_com = mbc.comVel;
@@ -75,8 +73,7 @@ sva::ForceVecd computeCentroidalMomentum(const MultiBody & mb, const MultiBodyCo
   const std::vector<Body> & bodies = mb.bodies();
   Vector6d cm(Vector6d::Zero());
 
-  sva::PTransformd X_com_0(Vector3d(-com));
-  X_com_0 = mbc.com.inv();
+  sva::PTransformd X_com_0 = sva::PTransformd(mbc.com.rotation(), com).inv();
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     // body inertia in body coordinate
@@ -100,8 +97,7 @@ sva::ForceVecd computeCentroidalMomentumDot(const MultiBody & mb,
   const std::vector<Body> & bodies = mb.bodies();
   Vector6d cm(Vector6d::Zero());
 
-  PTransformd X_0_com(com);
-  X_0_com = mbc.com;
+  const PTransformd X_0_com = sva::PTransformd(mbc.com.rotation(), com);
   MotionVecd com_Vel(Vector3d::Zero(), comDot);
   com_Vel = mbc.comVel;
 
@@ -192,12 +188,12 @@ void CentroidalMomentumMatrix::computeMatrix(const MultiBody & mb,
   const std::vector<Body> & bodies = mb.bodies();
   cmMat_.setZero();
 
-  sva::PTransformd X_0_com(com);
-  X_0_com = mbc.com;
+  const sva::PTransformd X_0_com = sva::PTransformd(mbc.com.rotation(), com);
+
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     const MatrixXd & jac = jacVec_[i].bodyJacobian(mb, mbc);
-    sva::PTransformd X_i_com(X_0_com * (mbc.bodyPosW[i].inv()));
+    const sva::PTransformd X_i_com(X_0_com * (mbc.bodyPosW[i].inv()));
     Eigen::MatrixXd j_full = Eigen::MatrixXd::Zero(cmMat_.rows(), cmMat_.cols());
     jacVec_[i].fullJacobian(mb, jac, j_full);
     const Matrix6d proj = X_i_com.dualMatrix() * bodies[i].inertia().matrix();
@@ -215,8 +211,8 @@ void CentroidalMomentumMatrix::computeMatrixDot(const MultiBody & mb,
   const std::vector<Body> & bodies = mb.bodies();
   cmMatDot_.setZero();
 
-  sva::PTransformd X_0_com(com);
-  X_0_com = mbc.com;
+  const sva::PTransformd X_0_com = sva::PTransformd(mbc.com.rotation(), com);
+
   sva::MotionVecd com_Vel(Vector3d::Zero(), comDot);
   com_Vel = mbc.comVel;
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
@@ -268,8 +264,7 @@ sva::ForceVecd CentroidalMomentumMatrix::momentum(const MultiBody & mb,
   const std::vector<Body> & bodies = mb.bodies();
   Vector6d cm(Vector6d::Zero());
 
-  sva::PTransformd X_com_0(Vector3d(-com));
-  X_com_0 = mbc.com.inv();
+  const sva::PTransformd X_com_0 = sva::PTransformd(mbc.com.rotation(), com).inv();
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
     // body inertia in body coordinate
@@ -321,15 +316,14 @@ sva::ForceVecd CentroidalMomentumMatrix::normalMomentumDot(const MultiBody & mb,
   const std::vector<Body> & bodies = mb.bodies();
   Vector6d cm(Vector6d::Zero());
 
-  sva::PTransformd X_com_0(Vector3d(-com));
-  X_com_0 = mbc.com.inv();
+  const sva::PTransformd X_com_0 = sva::PTransformd(mbc.com.rotation(), com).inv();
   sva::MotionVecd com_Vel(Vector3d::Zero(), comDot);
   com_Vel = mbc.comVel;
 
   for(size_t i = 0; i < static_cast<size_t>(mb.nrBodies()); ++i)
   {
-    sva::MotionVecd v_i(mbc.bodyVelB[i]);
-    sva::PTransformd X_com_i(mbc.bodyPosW[i] * X_com_0);
+    const sva::MotionVecd v_i(mbc.bodyVelB[i]);
+    const sva::PTransformd X_com_i(mbc.bodyPosW[i] * X_com_0);
     const auto I = bodies[i].inertia();
 
     cm += X_com_i.matrix().transpose()

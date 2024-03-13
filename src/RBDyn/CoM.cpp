@@ -10,7 +10,6 @@
 #include "RBDyn/MultiBody.h"
 #include "RBDyn/MultiBodyConfig.h"
 #include "RBDyn/NumericalIntegration.h"
-#include <iostream>
 
 namespace rbd
 {

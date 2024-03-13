@@ -72,7 +72,7 @@ struct RBDYN_DLLAPI MultiBodyConfig
 
   /// CoM frame, initialized with the orientation of the root link
   sva::PTransformd com;
-  std::vector<double> com_ori;
+  std::vector<double> com_ori{1, 0, 0, 0};
 
   sva::MotionVecd comVel;
 
