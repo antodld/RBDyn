@@ -11,6 +11,8 @@
 #include "RBDyn/MultiBody.h"
 #include "RBDyn/MultiBodyConfig.h"
 
+#include "RBDyn/CoM.h"
+
 namespace rbd
 {
 
@@ -73,6 +75,209 @@ Eigen::Matrix6d centroidalInertiaDot(const MultiBody & mb,
   // IcDot.block(0,3,3,3).setZero();
   // IcDot.block(3,0,3,3).setZero();
   return IcDot;
+}
+
+// std::vector<Eigen::Matrix6d> centroidalInertiaJacobian(const MultiBody & mb,
+//                                      const MultiBodyConfig & mbc)
+// {
+
+//   std::vector<Eigen::Matrix6d> IcJac;
+//   std::vector<Eigen::MatrixXd> jacs;
+//   std::vector<Eigen::Vector3d> c;
+
+
+//   rbd::CoMJacobian comJac(mb);
+  
+//   const auto Jc = comJac.jacobian(mb,mbc);
+
+  
+
+//   for(int b = 0; b < mb.nrBodies(); b++)
+//   {
+//     Eigen::Vector3d body_c = mb.body(b).inertia().momentum()/mb.body(b).inertia().mass();
+//     if(body_c.hasNaN()){body_c.setZero();}
+//     const auto X_b_bc = sva::PTransformd(Eigen::Matrix3d::Identity(),body_c);
+//     auto jac = Jacobian(mb, mb.body(b).name(),body_c);
+//     const auto jacLocal = jac.jacobian(mb,mbc);
+//     Eigen::MatrixXd fullJac = Eigen::MatrixXd::Zero(6,mb.nrDof());
+//     jac.addFullJacobian(mb,jacLocal,fullJac);
+//     jacs.push_back(fullJac);
+//     c.push_back( (X_b_bc * mbc.bodyPosW[b]).translation() - mbc.com.translation());
+//   }
+//   for(int j = 0 ; j < mb.nrDof() ; j++)
+//   {
+//     Eigen::Matrix6d JacI_i = Eigen::Matrix6d::Zero();
+//     for(int i = 0 ; i < mb.nrBodies();i++)
+//     {
+//       const Eigen::Matrix3d E_0_c = mbc.bodyPosW[i].rotation();
+//       const auto Ic_i = mb.body(i).inertia().inertia() ;
+//       const Eigen::Matrix3d jac_ij_cross = sva::vector3ToCrossMatrix<double>(jacs[i].block(0,j,3,1));
+//       const Eigen::Vector3d jac_ij =  jacs[i].block(3,j,3,1);
+//       const Eigen::Vector3d com_jac_ij = Jc.block(0,j,3,1);
+//       const double m = mb.body(i).inertia().mass();
+//       const auto ci_cross = sva::vector3ToCrossMatrix<double>( mbc.com.rotation() * c[i]); 
+//       const auto deriv_ci_cross = sva::vector3ToCrossMatrix<double>(mbc.com.rotation() * (jac_ij - com_jac_ij));
+
+//       JacI_i.block(0,0,3,3) += jac_ij_cross * E_0_c * Ic_i * E_0_c.transpose() 
+//                                + E_0_c * Ic_i * (jac_ij_cross * E_0_c).transpose() 
+//                                + m * (deriv_ci_cross * ci_cross.transpose() + ci_cross * deriv_ci_cross.transpose()) ;
+//       JacI_i.block(0,3,3,3) += m * deriv_ci_cross  ;
+//       JacI_i.block(3,0,3,3) += m * deriv_ci_cross.transpose()  ;
+
+//     }
+//     IcJac.push_back(JacI_i);
+//   }
+
+//   return IcJac;
+  
+// }
+
+std::vector<Eigen::Matrix6d> centroidalInertiaJacobian(const MultiBody & mb,
+                                     const MultiBodyConfig & mbc)
+{
+
+  std::vector<Eigen::Matrix6d> IcJac;
+  std::vector<Eigen::MatrixXd> jacs;
+  std::vector<Eigen::Matrix6d> Ib;
+  
+  for(int b = 0; b < mb.nrBodies(); b++)
+  {
+    auto jac = Jacobian(mb, mb.body(b).name());
+    const auto X_b_c = mbc.com * mbc.bodyPosW[b].inv();
+    const auto jacLocal = jac.bodyJacobian(mb,mbc);
+    Eigen::MatrixXd fullJac = Eigen::MatrixXd::Zero(6,mb.nrDof());
+    jac.addFullJacobian(mb,jacLocal,fullJac);
+    jacs.push_back(X_b_c.matrix() * fullJac);
+    Ib.push_back( X_b_c.dualMatrix() * mb.body(b).inertia().matrix() * X_b_c.inv().matrix()  ); 
+  }
+  for(int j = 0 ; j < mb.nrDof() ; j++)
+  {
+    Eigen::Matrix6d JacI_i = Eigen::Matrix6d::Zero();
+    for(int i = 0 ; i < mb.nrBodies();i++)
+    {
+      const Eigen::Matrix6d jac_ij_cross = sva::vector6ToCrossMatrix<double>( (jacs[i] - mbc.Jcom).block(0,j,6,1));
+      const Eigen::Matrix6d jac_ij_crossDual = sva::vector6ToCrossDualMatrix<double>( (jacs[i] - mbc.Jcom).block(0,j,6,1));
+
+      JacI_i += jac_ij_crossDual * Ib[i] - Ib[i] * jac_ij_cross;
+
+    }
+    IcJac.push_back(JacI_i);
+  }
+
+  return IcJac;
+  
+}
+
+// std::vector<Eigen::Matrix6d> centroidalInertiaJacobianDot(const MultiBody & mb,
+//                                      const MultiBodyConfig & mbc)
+// {
+
+//   std::vector<Eigen::Matrix6d> IcJacDot;
+//   std::vector<Eigen::MatrixXd> jacs;
+//   std::vector<Eigen::MatrixXd> jacsDot;
+//   std::vector<Eigen::Vector3d> c;
+
+
+//   rbd::CoMJacobian comJac(mb);
+  
+//   const auto Jc = comJac.jacobian(mb,mbc);
+//   const auto JcDot = comJac.jacobianDot(mb,mbc);
+
+  
+
+//   for(int b = 0; b < mb.nrBodies(); b++)
+//   {
+//     Eigen::Vector3d body_c = mb.body(b).inertia().momentum()/mb.body(b).inertia().mass();
+//     if(body_c.hasNaN()){body_c.setZero();}
+//     const auto X_b_bc = sva::PTransformd(Eigen::Matrix3d::Identity(),body_c);
+//     auto jac = Jacobian(mb, mb.body(b).name(),body_c);
+//     const auto jacLocal = jac.jacobian(mb,mbc);
+//     const auto jacDotLocal = jac.jacobianDot(mb,mbc);
+//     Eigen::MatrixXd fullJac = Eigen::MatrixXd::Zero(6,mb.nrDof());
+//     Eigen::MatrixXd fullJacDot = Eigen::MatrixXd::Zero(6,mb.nrDof());
+//     jac.addFullJacobian(mb,jacLocal,fullJac);
+//     jac.addFullJacobian(mb,jacDotLocal,fullJacDot);
+//     jacs.push_back(fullJac);
+//     jacsDot.push_back(fullJacDot);
+//     c.push_back( (X_b_bc * mbc.bodyPosW[b]).translation() - mbc.com.translation());
+//   }
+//   for(int j = 0 ; j < mb.nrDof() ; j++)
+//   {
+//     Eigen::Matrix6d JacDotI_i = Eigen::Matrix6d::Zero();
+//     for(int i = 0 ; i < mb.nrBodies();i++)
+//     {
+//       const Eigen::Matrix3d E_0_c = mbc.bodyPosW[i].rotation();
+//       const auto Ic_i = mb.body(i).inertia().inertia() ;
+//       const Eigen::Vector3d jac_ij = jacs[i].block(3,j,3,1);
+//       const Eigen::Matrix3d jac_ij_cross = sva::vector3ToCrossMatrix<double>(jac_ij);
+//       const Eigen::Vector3d jacDot_ij = jacsDot[i].block(3,j,3,1);
+//       const Eigen::Matrix3d jacDot_ij_cross = sva::vector3ToCrossMatrix<double>(jacDot_ij);
+//       const Eigen::Vector3d com_jac_ij = Jc.block(0,j,3,1);
+//       const Eigen::Vector3d com_jacDot_ij = Jc.block(0,j,3,1);
+//       const double m = mb.body(i).inertia().mass();
+//       const auto ci_cross = sva::vector3ToCrossMatrix<double>( mbc.com.rotation() * c[i]); 
+//       const auto deriv_ci_cross = sva::vector3ToCrossMatrix<double>(mbc.com.rotation() * (jac_ij - com_jac_ij));
+//       const auto derivDot_ci_cross = sva::vector3ToCrossMatrix<double>(mbc.com.rotation() * (jacDot_ij - com_jacDot_ij));
+
+//       JacDotI_i.block(0,0,3,3) +=   (jacDot_ij_cross + jac_ij_cross * jac_ij_cross ) * E_0_c * Ic_i * E_0_c.transpose() 
+//                                     + jac_ij_cross * E_0_c * Ic_i * (jac_ij_cross * E_0_c).transpose()
+//                                     + E_0_c * Ic_i * ((jacDot_ij_cross + jac_ij_cross * jac_ij_cross ) * E_0_c).transpose()
+//                                     + m * (derivDot_ci_cross * ci_cross.transpose() 
+//                                     + deriv_ci_cross * deriv_ci_cross.transpose()) ;
+//       JacDotI_i.block(0,3,3,3) += m * derivDot_ci_cross  ;
+//       JacDotI_i.block(3,0,3,3) += m * derivDot_ci_cross.transpose()  ;
+
+//     }
+//     IcJacDot.push_back(JacDotI_i);
+//   }
+
+//   return IcJacDot;
+  
+// }
+
+std::vector<Eigen::Matrix6d> centroidalInertiaJacobianDot(const MultiBody & mb,
+                                     const MultiBodyConfig & mbc)
+{
+
+  std::vector<Eigen::Matrix6d> IcJac;
+  std::vector<Eigen::Matrix6d> Ib;
+  std::vector<Eigen::MatrixXd> jacs;
+  std::vector<Eigen::MatrixXd> jacDots;
+
+
+  for(int b = 0; b < mb.nrBodies(); b++)
+  {
+    auto jac = Jacobian(mb, mb.body(b).name());
+    const auto X_b_c = mbc.com * mbc.bodyPosW[b].inv();
+    const auto jacLocal = jac.bodyJacobian(mb,mbc);
+    const auto jacDotLocal = jac.bodyJacobianDot(mb,mbc);
+    Eigen::MatrixXd fullJac = Eigen::MatrixXd::Zero(6,mb.nrDof());
+    jac.addFullJacobian(mb,jacLocal,fullJac);
+    jacs.push_back(X_b_c.matrix() * fullJac);
+    jac.addFullJacobian(mb,jacDotLocal,fullJac);
+    jacDots.push_back(X_b_c.matrix() * fullJac);
+    Ib.push_back( X_b_c.dualMatrix() * mb.body(b).inertia().matrix() * X_b_c.inv().matrix()  ); 
+  
+  }
+  for(int j = 0 ; j < mb.nrDof() ; j++)
+  {
+    Eigen::Matrix6d JacI_i = Eigen::Matrix6d::Zero();
+    for(int i = 0 ; i < mb.nrBodies();i++)
+    {
+      const Eigen::Matrix6d jac_ij_cross = sva::vector6ToCrossMatrix<double>( (jacs[i] - mbc.Jcom).block(0,j,6,1));
+      const Eigen::Matrix6d jac_ij_crossDual = sva::vector6ToCrossDualMatrix<double>((jacs[i] - mbc.Jcom).block(0,j,6,1));
+      const Eigen::Matrix6d jacDot_ij_cross = sva::vector6ToCrossMatrix<double>((jacDots[i] - mbc.Jcomdot).block(0,j,6,1));
+      const Eigen::Matrix6d jacDot_ij_crossDual = sva::vector6ToCrossDualMatrix<double>((jacDots[i] - mbc.Jcomdot).block(0,j,6,1));
+
+      JacI_i += jacDot_ij_crossDual * Ib[i] - Ib[i] * jacDot_ij_cross
+                - 2 * (jac_ij_crossDual * Ib[i] * jac_ij_cross ) ;
+
+    }
+    IcJac.push_back(JacI_i);
+  }
+
+  return IcJac;
+  
 }
 
 sva::ForceVecd computeCentroidalMomentum(const MultiBody & mb, const MultiBodyConfig & mbc, const Eigen::Vector3d & com)

@@ -51,8 +51,8 @@ void updateCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc, const double st
 {
   const Eigen::Vector3d com = computeCoM(mb, mbc);
 
-  auto qd = rbd::paramToVector(mb, mbc.alpha);
-  auto qdd = rbd::paramToVector(mb, mbc.alphaD);
+  auto qd = rbd::dofToVector(mb, mbc.alpha);
+  auto qdd = rbd::dofToVector(mb, mbc.alphaD);
   mbc.comAcc = sva::MotionVecd(mbc.Jcom * qdd + mbc.Jcomdot * qd);
 
   mbc.comAcc = mbc.comAcc + sva::MotionVecd(Eigen::Vector3d::Zero(), mbc.comVel.angular().cross(mbc.comVel.linear()));
@@ -84,8 +84,21 @@ void updateCoMFrame(const MultiBody & mb, MultiBodyConfig & mbc, const double st
 
   rbd::CentroidalMomentumMatrix cmm(mb);
   cmm.computeMatrixAndMatrixDot(mb, mbc, com, mbc.comVel.linear());
+  
   mbc.Jcom = Ic_inv * cmm.matrix();
   mbc.Jcomdot = Ic_inv * (cmm.matrixDot() - Ic_dot * mbc.Jcom);
+
+  const auto IcJac = rbd::centroidalInertiaJacobian(mb,mbc);
+  const auto IcJacDot = rbd::centroidalInertiaJacobianDot(mb,mbc);
+  mbc.JIdv = Ic_dot * mbc.Jcom;
+  mbc.JIdvDot = Ic_dot * mbc.Jcomdot;
+  size_t i = 0;
+  for(auto & Jic : IcJac)
+  {
+    mbc.JIdv.block(0,i,6,1) += Jic * mbc.comVel.vector();
+    mbc.JIdvDot.block(0,i,6,1) += IcJacDot[i] * mbc.comVel.vector();
+    i+=1;
+  }
 }
 
 Eigen::Vector3d computeCoM(const MultiBody & mb, const MultiBodyConfig & mbc)

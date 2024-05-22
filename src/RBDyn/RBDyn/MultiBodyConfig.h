@@ -82,6 +82,9 @@ struct RBDYN_DLLAPI MultiBodyConfig
 
   Eigen::MatrixXd Jcomdot;
 
+  Eigen::MatrixXd JIdv;
+  Eigen::MatrixXd JIdvDot;
+
   // python binding function
 
   std::vector<Eigen::MatrixXd> python_motionSubspace();
